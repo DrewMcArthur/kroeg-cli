@@ -6,6 +6,9 @@ extern crate kroeg_server;
 #[cfg(feature = "mastodon")]
 extern crate kroeg_mastodon;
 
+#[cfg(feature = "oauth")]
+extern crate kroeg_oauth;
+
 use futures::{future, Future};
 use hyper::{Body, Response, Server};
 use kroeg_server::{
@@ -47,6 +50,9 @@ fn listen_future(
 
     #[cfg(feature = "mastodon")]
     kroeg_mastodon::register(&mut builder);
+
+    #[cfg(feature = "oauth")]
+    kroeg_oauth::register(&mut builder);
 
     println!(" [+] listening at {}", addr);
 

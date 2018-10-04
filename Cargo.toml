@@ -4,11 +4,13 @@ version = "0.1.0"
 authors = ["Puck Meerburg <puck@puckipedia.com>"]
 
 [features]
-default = []
+default = ["mastodon", "oauth"]
 mastodon = ["kroeg-mastodon"]
+oauth = ["kroeg-oauth"]
 
 [dependencies]
 kroeg-mastodon = { path = "../mastodon", optional = true }
+kroeg-oauth = { path = "../oauth", optional = true }
 kroeg-server = { path = "../server" }
 hyper = "0.12"
 futures = "0.1"
