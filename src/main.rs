@@ -1,62 +1,43 @@
-extern crate dotenv;
-extern crate futures;
-extern crate hyper;
-extern crate kroeg_server;
-
-#[cfg(feature = "mastodon")]
-extern crate kroeg_mastodon;
-
-#[cfg(feature = "oauth")]
-extern crate kroeg_oauth;
-
-use futures::{future, Future};
-use hyper::{Body, Response, Server};
+use http::Response;
+use http_service::Body;
 use kroeg_server::{
-    compact_response, config, context, get, launch_delivery, post, router::Route, webfinger,
-    KroegServiceBuilder,
+    config, context, get, launch_delivery, post, router::RequestHandler, router::Route, webfinger,
+    KroegService, ServerError,
 };
+use kroeg_tap::Context;
 
-fn listen_future(
-    address: &str,
-    config: &config::Config,
-) -> impl Future<Item = (), Error = ()> + Send + 'static {
+struct ContextHandler;
+
+#[async_trait::async_trait]
+impl RequestHandler for ContextHandler {
+    async fn run(
+        &self,
+        _: &mut Context<'_, '_>,
+        _: http_service::Request,
+    ) -> Result<http_service::Response, ServerError> {
+        Ok(Response::builder()
+            .status(200)
+            .header("Content-Type", "application/ld+json")
+            .body(Body::from(context::read_context().to_string()))
+            .unwrap())
+    }
+}
+
+fn listen_future(address: &str, config: &config::Config) {
     let addr = address.parse().expect("Invalid listen address!");
 
-    let routes = vec![
-        Route::get_prefix("/", compact_response(get::get)),
-        Route::post_prefix("/", compact_response(post::post)),
-        Route::get(
-            "/-/context",
-            Box::new(|_, store, queue, _| {
-                Box::new(future::ok((
-                    store,
-                    queue,
-                    Response::builder()
-                        .status(200)
-                        .header("Content-Type", "application/ld+json")
-                        .body(Body::from(context::read_context().to_string()))
-                        .unwrap(),
-                )))
-            }),
-        ),
+    let mut routes = vec![
+        Route::get_prefix("/", get::GetHandler),
+        Route::post_prefix("/", post::PostHandler),
+        Route::get("/-/context", ContextHandler),
     ];
 
-    let mut builder = KroegServiceBuilder {
-        config: config.clone(),
-        routes: routes,
-    };
+    routes.append(&mut webfinger::routes());
 
-    webfinger::register(&mut builder);
+    let builder = KroegService::new(config.clone(), routes);
 
-    #[cfg(feature = "mastodon")]
-    kroeg_mastodon::register(&mut builder);
-
-    #[cfg(feature = "oauth")]
-    kroeg_oauth::register(&mut builder);
-
-    println!(" [+] listening at {}", addr);
-
-    Server::bind(&addr).serve(builder).map_err(|_| ())
+    println!("Listening at: {}", addr);
+    http_service_hyper::run(builder, addr);
 }
 
 fn main() {
@@ -65,15 +46,11 @@ fn main() {
 
     println!("Kroeg v{} starting...", env!("CARGO_PKG_VERSION"));
 
-    hyper::rt::run(hyper::rt::lazy(move || {
-        if let Some(ref address) = config.listen {
-            hyper::rt::spawn(listen_future(address, &config));
-        }
+    for _ in 0..config.deliver.unwrap_or(0) {
+        async_std::task::spawn(launch_delivery(config.clone()));
+    }
 
-        for _ in 0..config.deliver.unwrap_or(0) {
-            hyper::rt::spawn(launch_delivery(config.clone()));
-        }
-
-        Ok(())
-    }))
+    if let Some(ref address) = config.listen {
+        listen_future(address, &config);
+    }
 }
