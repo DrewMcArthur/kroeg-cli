@@ -1,8 +1,8 @@
 use http::Response;
 use http_service::Body;
 use kroeg_server::{
-    config, context, get, launch_delivery, post, router::RequestHandler, router::Route, webfinger,
-    KroegService, ServerError,
+    config, context, get, launch_delivery, nodeinfo, post, router::RequestHandler, router::Route,
+    webfinger, KroegService, ServerError,
 };
 use kroeg_tap::Context;
 
@@ -32,6 +32,7 @@ fn listen_future(address: &str, config: &config::Config) {
         Route::get("/-/context", ContextHandler),
     ];
 
+    routes.append(&mut nodeinfo::routes());
     routes.append(&mut webfinger::routes());
 
     #[cfg(feature = "mastodon")]
