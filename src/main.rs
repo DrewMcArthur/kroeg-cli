@@ -34,6 +34,12 @@ fn listen_future(address: &str, config: &config::Config) {
 
     routes.append(&mut webfinger::routes());
 
+    #[cfg(feature = "mastodon")]
+    routes.append(&mut kroeg_mastodon::routes());
+
+    #[cfg(feature = "oauth")]
+    routes.append(&mut kroeg_oauth::routes());
+
     let builder = KroegService::new(config.clone(), routes);
 
     println!("Listening at: {}", addr);

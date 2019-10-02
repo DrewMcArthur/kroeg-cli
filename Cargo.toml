@@ -1,12 +1,20 @@
 [package]
 name = "kroeg"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Puck Meerburg <puck@puckipedia.com>"]
 edition = "2018"
+
+[features]
+default = ["mastodon", "oauth"]
+
+mastodon = ["kroeg-mastodon"]
+oauth = ["kroeg-oauth"]
 
 [dependencies]
 kroeg-server = { path = "../server" }
 kroeg-tap = { path = "../tap/tap" }
+kroeg-mastodon = { path = "../mastodon", optional = true }
+kroeg-oauth = { path = "../oauth", optional = true }
 http-service = "0.3"
 http-service-hyper = "0.3"
 async-std = "0.99"
