@@ -9,6 +9,7 @@ use kroeg_tap::Context;
 
 mod entity;
 mod request;
+mod user;
 
 struct ContextHandler;
 
@@ -166,6 +167,38 @@ fn main() {
                         .takes_value(true),
                 ),
         )
+        .subcommand(
+            SubCommand::with_name("actor")
+                .about("Sets up and changes actors")
+                .setting(AppSettings::SubcommandRequiredElseHelp)
+                .arg(
+                    Arg::with_name("ACTOR")
+                        .help("The ID of the actor")
+                        .index(1)
+                        .required(true),
+                )
+                .subcommand(
+                    SubCommand::with_name("create")
+                        .about("Creates this actor")
+                        .arg(
+                            Arg::with_name("username")
+                                .help("The preferredUsername of this user")
+                                .long("username")
+                                .value_name("NAME")
+                                .takes_value(true),
+                        )
+                        .arg(
+                            Arg::with_name("name")
+                                .help("The 'full name' of this user")
+                                .long("name")
+                                .value_name("NAME")
+                                .takes_value(true),
+                        ),
+                )
+                .subcommand(
+                    SubCommand::with_name("token").about("Prints a bearer token for this actor"),
+                ),
+        )
         .get_matches();
 
     let config = config::read_config(matches.value_of("config").unwrap_or("server.toml"));
@@ -176,6 +209,7 @@ fn main() {
         ("request", Some(subcommand)) => {
             async_std::task::block_on(request::handle(config, subcommand))
         }
+        ("actor", Some(subcommand)) => async_std::task::block_on(user::handle(config, subcommand)),
         ("serve", Some(subcommand)) => {
             let queue: usize = subcommand.value_of("queue").unwrap_or("0").parse().unwrap();
             let address = subcommand.value_of("ADDRESS").unwrap_or("");
