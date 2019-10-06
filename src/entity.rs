@@ -3,6 +3,7 @@ use kroeg_cellar::{CellarConnection, CellarEntityStore};
 use kroeg_server::{config::Config, context, store::RetrievingEntityStore};
 use kroeg_tap::{EntityStore, StoreItem};
 use serde_json::Value;
+use std::io::{stdin, BufRead};
 
 async fn print_entity(config: &Config, value: Value, format: &str) {
     match format {
@@ -26,7 +27,7 @@ async fn get(config: &Config, store: &mut dyn EntityStore, id: String, local: bo
 }
 
 async fn set(config: &Config, store: &mut dyn EntityStore, id: String, format: &str) {
-    let data = serde_json::from_reader(std::io::stdin()).unwrap();
+    let data = serde_json::from_reader(stdin()).unwrap();
     let expanded = jsonld::expand::<context::SurfContextLoader>(
         &context::apply_supplement(data),
         &jsonld::JsonLdOptions {
@@ -112,5 +113,37 @@ pub async fn handle(config: Config, matches: &ArgMatches<'_>) {
             .await
         }
         _ => unreachable!(),
+    }
+}
+
+pub async fn handle_query(config: Config) {
+    let database = CellarConnection::connect(
+        &config.database.server,
+        &config.database.username,
+        &config.database.password,
+        &config.database.database,
+    )
+    .await
+    .expect("Database connection failed");
+
+    let mut store = CellarEntityStore::new(&database);
+
+    let mut query_lines = Vec::new();
+    for line in stdin().lock().lines() {
+        let line = line.unwrap();
+
+        query_lines.push(line.parse().unwrap());
+    }
+
+    let queried = store
+        .query(query_lines)
+        .await
+        .expect("Database request failed");
+    for item in queried {
+        for item in item {
+            print!("{}\t", item);
+        }
+
+        println!();
     }
 }

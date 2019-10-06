@@ -67,6 +67,7 @@ fn main() {
                 .help("Sets a custom config file")
                 .takes_value(true),
         )
+        .subcommand(SubCommand::with_name("query").about("Runs a query passed on stdin"))
         .subcommand(
             SubCommand::with_name("entity")
                 .about("Manipulates the entity store backend")
@@ -206,6 +207,7 @@ fn main() {
         ("entity", Some(subcommand)) => {
             async_std::task::block_on(entity::handle(config, subcommand))
         }
+        ("query", _) => async_std::task::block_on(entity::handle_query(config)),
         ("request", Some(subcommand)) => {
             async_std::task::block_on(request::handle(config, subcommand))
         }
