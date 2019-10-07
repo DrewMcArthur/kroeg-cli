@@ -1,12 +1,18 @@
 use clap::{App, AppSettings, Arg, SubCommand};
 use http::Response;
 use http_service::Body;
+use kroeg_cellar::{CellarConnection, CellarEntityStore};
 use kroeg_server::{
-    config, context, get, launch_delivery, nodeinfo, post, router::RequestHandler, router::Route,
-    webfinger, KroegService, ServerError,
+    context, get, launch_delivery, nodeinfo, post, router::RequestHandler, router::Route,
+    webfinger, KroegService, LeasedConnection, ServerError, StorePool,
 };
-use kroeg_tap::Context;
+use kroeg_tap::{Context, EntityStore, QueueStore, StoreError};
+use std::fs::File;
+use std::future::Future;
+use std::io::Read;
+use std::pin::Pin;
 
+mod config;
 mod entity;
 mod request;
 mod user;
@@ -28,7 +34,7 @@ impl RequestHandler for ContextHandler {
     }
 }
 
-fn listen(address: &str, config: &config::Config) {
+fn listen(address: &str, config: &config::KroegConfig) {
     let addr = address.parse().expect("Invalid listen address!");
 
     let mut routes = vec![
@@ -46,15 +52,79 @@ fn listen(address: &str, config: &config::Config) {
     #[cfg(feature = "oauth")]
     routes.append(&mut kroeg_oauth::routes());
 
-    let builder = KroegService::new(config.clone(), routes);
+    let pool = DatabasePool(config.database.clone());
+    let builder = KroegService::new(pool, config.server.clone(), routes);
 
     println!("Listening at: {}", addr);
     http_service_hyper::run(builder, addr);
 }
 
-fn main() {
-    dotenv::dotenv().ok();
+// Using a raw pointer here to 100% ensure the connection outlives the EntityStore and QueueStore
+//  that make use of it. It is an ugly hack.
+enum DatabaseConnection {
+    PostgreSQL(
+        *mut CellarConnection,
+        Option<(CellarEntityStore<'static>, CellarEntityStore<'static>)>,
+    ),
+}
 
+unsafe impl Send for DatabaseConnection {}
+
+impl LeasedConnection for DatabaseConnection {
+    fn get(&mut self) -> (&mut dyn EntityStore, &mut dyn QueueStore) {
+        match self {
+            DatabaseConnection::PostgreSQL(_, Some((left, right))) => (left, right),
+
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl Drop for DatabaseConnection {
+    fn drop(&mut self) {
+        match self {
+            DatabaseConnection::PostgreSQL(conn, data) => {
+                *data = None;
+                unsafe { Box::from_raw(*conn) };
+            }
+        }
+    }
+}
+
+struct DatabasePool(config::DatabaseConfig);
+
+impl StorePool for DatabasePool {
+    type LeasedConnection = DatabaseConnection;
+
+    fn connect(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::LeasedConnection, StoreError>> + Send + 'static>>
+    {
+        let cloned = self.0.clone();
+
+        Box::pin(async move {
+            match &cloned {
+                config::DatabaseConfig::PostgreSQL {
+                    server,
+                    username,
+                    password,
+                    database,
+                } => {
+                    let connection =
+                        CellarConnection::connect(server, username, password, database);
+                    let conn = Box::into_raw(Box::new(connection.await?));
+
+                    let left = CellarEntityStore::new(unsafe { &*conn });
+                    let right = CellarEntityStore::new(unsafe { &*conn });
+
+                    Ok(DatabaseConnection::PostgreSQL(conn, Some((left, right))))
+                }
+            }
+        })
+    }
+}
+
+fn main() {
     let matches = App::new("Kroeg")
         .version(env!("CARGO_PKG_VERSION"))
         .author("Puck Meerburg <puck@puckipedia.com>")
@@ -202,7 +272,12 @@ fn main() {
         )
         .get_matches();
 
-    let config = config::read_config(matches.value_of("config").unwrap_or("server.toml"));
+    let config_filename = matches.value_of("config").unwrap_or("server.toml");
+    let mut file = File::open(config_filename).unwrap();
+    let mut data = Vec::new();
+    file.read_to_end(&mut data).unwrap();
+    let config: config::KroegConfig = toml::from_slice(&data).unwrap();
+
     match matches.subcommand() {
         ("entity", Some(subcommand)) => {
             async_std::task::block_on(entity::handle(config, subcommand))
@@ -222,13 +297,15 @@ fn main() {
                 queue - 1
             };
             for _ in 0..extra_count {
-                async_std::task::spawn(launch_delivery(config.clone()));
+                let pool = DatabasePool(config.database.clone());
+                async_std::task::spawn(launch_delivery(pool, config.server.clone()));
             }
 
             if !address.is_empty() {
                 listen(address, &config);
             } else if queue > 0 {
-                async_std::task::block_on(launch_delivery(config));
+                let pool = DatabasePool(config.database);
+                async_std::task::block_on(launch_delivery(pool, config.server));
             }
         }
         _ => unreachable!(),

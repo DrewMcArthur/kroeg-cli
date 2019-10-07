@@ -1,8 +1,9 @@
+use crate::config::KroegConfig;
 use clap::ArgMatches;
 use http_service::Body;
-use kroeg_cellar::{CellarConnection, CellarEntityStore};
 use kroeg_server::{
-    config::Config, context, get, post, router::RequestHandler, store::RetrievingEntityStore,
+    context, get, post, router::RequestHandler, store::RetrievingEntityStore, LeasedConnection,
+    StorePool,
 };
 use kroeg_tap::{Context, User};
 use std::collections::HashMap;
@@ -36,24 +37,16 @@ async fn print_entity(value: Vec<u8>, format: &str) {
     }
 }
 
-pub async fn handle(config: Config, matches: &ArgMatches<'_>) {
+pub async fn handle(config: KroegConfig, matches: &ArgMatches<'_>) {
     let format = matches.value_of("format").unwrap();
     let url = matches.value_of("URL").unwrap().to_owned();
 
-    let database = CellarConnection::connect(
-        &config.database.server,
-        &config.database.username,
-        &config.database.password,
-        &config.database.database,
-    )
-    .await
-    .expect("Database connection failed");
+    let pool = crate::DatabasePool(config.database);
+    let mut conn = pool.connect().await.expect("Database connection failed");
+    let (entity_store, queue_store) = conn.get();
 
-    let mut entitystore = RetrievingEntityStore::new(
-        CellarEntityStore::new(&database),
-        config.server.base_uri.to_owned(),
-    );
-    let mut queuestore = CellarEntityStore::new(&database);
+    let mut entity_store =
+        RetrievingEntityStore::new(entity_store, config.server.domain.to_owned());
 
     let mut context = Context {
         user: User {
@@ -64,11 +57,11 @@ pub async fn handle(config: Config, matches: &ArgMatches<'_>) {
             token_identifier: "cli".to_owned(),
         },
 
-        server_base: config.server.base_uri.to_owned(),
+        server_base: config.server.domain.to_owned(),
         name: config.server.name.to_owned(),
         description: config.server.description.to_owned(),
-        entity_store: &mut entitystore,
-        queue_store: &mut queuestore,
+        entity_store: &mut entity_store,
+        queue_store,
         instance_id: config.server.instance_id,
     };
 

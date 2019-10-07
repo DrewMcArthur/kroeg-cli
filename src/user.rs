@@ -1,7 +1,7 @@
+use crate::config::KroegConfig;
 use clap::ArgMatches;
 use jsonld::nodemap::{Pointer, Value};
-use kroeg_cellar::{CellarConnection, CellarEntityStore};
-use kroeg_server::config::Config;
+use kroeg_server::{config::ServerConfig, LeasedConnection, StorePool};
 use kroeg_tap::{
     as2, kroeg, sec, untangle, Context, EntityStore, MessageHandler, QueueStore, StoreError, User,
 };
@@ -66,7 +66,7 @@ async fn create_auth(store: &mut dyn EntityStore, id: String) -> Result<(), Stor
 }
 
 async fn create_actor(
-    config: Config,
+    config: ServerConfig,
     store: &mut dyn EntityStore,
     queue: &mut dyn QueueStore,
     mut id: String,
@@ -81,12 +81,12 @@ async fn create_actor(
             token_identifier: "cli".to_owned(),
         },
 
-        server_base: config.server.base_uri.to_owned(),
-        name: config.server.name.to_owned(),
-        description: config.server.description.to_owned(),
+        server_base: config.domain.to_owned(),
+        name: config.name.to_owned(),
+        description: config.description.to_owned(),
         entity_store: store,
         queue_store: queue,
-        instance_id: config.server.instance_id,
+        instance_id: config.instance_id,
     };
 
     let mut json = json!({
@@ -126,25 +126,17 @@ async fn create_actor(
     println!("done");
 }
 
-pub async fn handle(config: Config, matches: &ArgMatches<'_>) {
+pub async fn handle(config: KroegConfig, matches: &ArgMatches<'_>) {
     let id = matches.value_of("ACTOR").unwrap().to_owned();
+    let pool = crate::DatabasePool(config.database);
+    let mut conn = pool.connect().await.expect("Database connection failed");
 
-    let database = CellarConnection::connect(
-        &config.database.server,
-        &config.database.username,
-        &config.database.password,
-        &config.database.database,
-    )
-    .await
-    .expect("Database connection failed");
-
-    let mut entitystore = CellarEntityStore::new(&database);
-    let mut queuestore = CellarEntityStore::new(&database);
+    let (entity_store, queue_store) = conn.get();
 
     match matches.subcommand() {
-        ("token", _) => create_auth(&mut entitystore, id).await.unwrap(),
+        ("token", _) => create_auth(entity_store, id).await.unwrap(),
         ("create", Some(cmd)) => {
-            create_actor(config, &mut entitystore, &mut queuestore, id, cmd).await
+            create_actor(config.server, entity_store, queue_store, id, cmd).await
         }
         _ => unreachable!(),
     }

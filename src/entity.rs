@@ -1,17 +1,17 @@
+use crate::config;
 use clap::ArgMatches;
-use kroeg_cellar::{CellarConnection, CellarEntityStore};
-use kroeg_server::{config::Config, context, store::RetrievingEntityStore};
+use kroeg_server::{
+    config::ServerConfig, context, store::RetrievingEntityStore, LeasedConnection, StorePool,
+};
 use kroeg_tap::{EntityStore, StoreItem};
 use serde_json::Value;
 use std::io::{stdin, BufRead};
 
-async fn print_entity(config: &Config, value: Value, format: &str) {
+async fn print_entity(config: &ServerConfig, value: Value, format: &str) {
     match format {
         "expand" => println!("{}", value),
         "compact" => {
-            let compacted = context::compact(&config.server.base_uri, &value)
-                .await
-                .unwrap();
+            let compacted = context::compact(&config.domain, &value).await.unwrap();
             println!("{}", compacted);
         }
 
@@ -19,14 +19,20 @@ async fn print_entity(config: &Config, value: Value, format: &str) {
     }
 }
 
-async fn get(config: &Config, store: &mut dyn EntityStore, id: String, local: bool, format: &str) {
+async fn get(
+    config: &ServerConfig,
+    store: &mut dyn EntityStore,
+    id: String,
+    local: bool,
+    format: &str,
+) {
     if let Some(entity) = store.get(id, local).await.expect("failed to get entity") {
         let entity = entity.to_json();
         print_entity(config, entity, format).await;
     }
 }
 
-async fn set(config: &Config, store: &mut dyn EntityStore, id: String, format: &str) {
+async fn set(config: &ServerConfig, store: &mut dyn EntityStore, id: String, format: &str) {
     let data = serde_json::from_reader(stdin()).unwrap();
     let expanded = jsonld::expand::<context::SurfContextLoader>(
         &context::apply_supplement(data),
@@ -74,27 +80,27 @@ async fn del(store: &mut dyn EntityStore, id: String, item: String) {
         .expect("failed to remove from collection");
 }
 
-pub async fn handle(config: Config, matches: &ArgMatches<'_>) {
+pub async fn handle(config: config::KroegConfig, matches: &ArgMatches<'_>) {
     let is_remote = matches.is_present("remote");
     let format = matches.value_of("format").unwrap();
     let id = matches.value_of("ID").unwrap();
+    let pool = crate::DatabasePool(config.database);
+    let mut conn = pool.connect().await.expect("Database connection failed");
 
-    let database = CellarConnection::connect(
-        &config.database.server,
-        &config.database.username,
-        &config.database.password,
-        &config.database.database,
-    )
-    .await
-    .expect("Database connection failed");
-    let mut entitystore = RetrievingEntityStore::new(
-        CellarEntityStore::new(&database),
-        config.server.base_uri.to_owned(),
-    );
+    let mut entitystore = RetrievingEntityStore::new(conn.get().0, config.server.domain.to_owned());
 
     match matches.subcommand() {
-        ("get", _) => get(&config, &mut entitystore, id.to_owned(), !is_remote, format).await,
-        ("set", _) => set(&config, &mut entitystore, id.to_owned(), format).await,
+        ("get", _) => {
+            get(
+                &config.server,
+                &mut entitystore,
+                id.to_owned(),
+                !is_remote,
+                format,
+            )
+            .await
+        }
+        ("set", _) => set(&config.server, &mut entitystore, id.to_owned(), format).await,
         ("list", _) => list(&mut entitystore, id.to_owned()).await,
         ("add", cmd) => {
             add(
@@ -116,17 +122,11 @@ pub async fn handle(config: Config, matches: &ArgMatches<'_>) {
     }
 }
 
-pub async fn handle_query(config: Config) {
-    let database = CellarConnection::connect(
-        &config.database.server,
-        &config.database.username,
-        &config.database.password,
-        &config.database.database,
-    )
-    .await
-    .expect("Database connection failed");
+pub async fn handle_query(config: config::KroegConfig) {
+    let pool = crate::DatabasePool(config.database);
+    let mut conn = pool.connect().await.expect("Database connection failed");
 
-    let mut store = CellarEntityStore::new(&database);
+    let (store, _) = conn.get();
 
     let mut query_lines = Vec::new();
     for line in stdin().lock().lines() {
