@@ -40,9 +40,12 @@ fn listen(address: &str, config: &config::KroegConfig) {
     let mut routes = vec![
         Route::get_prefix("/", get::GetHandler),
         Route::post_prefix("/", post::PostHandler),
-        Route::get("/-/context", ContextHandler),
     ];
 
+    #[cfg(feature = "frontend")]
+    routes.append(&mut kroeg_frontend::routes().expect("Failed to register frontend"));
+
+    routes.push(Route::get("/-/context", ContextHandler));
     routes.append(&mut nodeinfo::routes());
     routes.append(&mut webfinger::routes());
 

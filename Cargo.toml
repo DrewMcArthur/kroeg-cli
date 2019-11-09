@@ -9,6 +9,7 @@ default = ["mastodon", "oauth"]
 
 mastodon = ["kroeg-mastodon"]
 oauth = ["kroeg-oauth"]
+frontend = ["kroeg-frontend"]
 
 [dependencies]
 kroeg-server = { path = "../server" }
@@ -17,6 +18,7 @@ kroeg-tap = { path = "../tap/tap" }
 kroeg-tap-activitypub = { path = "../tap/activitypub" }
 kroeg-mastodon = { path = "../mastodon", optional = true }
 kroeg-oauth = { path = "../oauth", optional = true }
+kroeg-frontend = { path = "../frontend", optional = true }
 jsonld = { path = "../jsonld-rs" }
 clap = "2.33.0"
 http-service = "0.3"
