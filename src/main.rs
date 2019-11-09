@@ -45,6 +45,18 @@ fn listen(address: &str, config: &config::KroegConfig) {
     #[cfg(feature = "frontend")]
     routes.append(&mut kroeg_frontend::routes().expect("Failed to register frontend"));
 
+    // Ensure GETs with the proper Accept get handled ActivityPub-first.
+    routes.push(Route {
+        content_type: vec![
+            "application/activity+json".to_string(),
+            "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\"".to_string(),
+        ],
+        method: http::Method::GET,
+        path: String::new(),
+        is_prefix: true,
+        handler: Box::new(get::GetHandler),
+    });
+
     routes.push(Route::get("/-/context", ContextHandler));
     routes.append(&mut nodeinfo::routes());
     routes.append(&mut webfinger::routes());
