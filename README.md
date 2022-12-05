@@ -6,7 +6,7 @@ This is a repository forked from [kroeg](https://puck.moe/git/kroeg/kroeg) by [P
 
 ## how to run
 
-1. [install rust](https://www.rust-lang.org/tools/install)
+1. install rust: [rust-lang.org/tools/install](https://www.rust-lang.org/tools/install)
 2. install postgresql
    - create a new db with `psql postgres -c 'CREATE DATABASE kroeg;'`
    - initialize the schema with `psql kroeg -f [db.sql](https://github.com/DrewMcArthur/kroeg-cellar/blob/main/schema/db.sql)` 
