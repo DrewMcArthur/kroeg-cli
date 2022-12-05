@@ -2,7 +2,7 @@
 
 > kroeg noun \- pub \- bar
 
-This is a repository forked from [kroeg](https://puck.moe/git/kroeg/kroeg) by [Puck Meerburg](https://puck.moe).
+This is a repository forked from [kroeg](https://puck.moe/git/kroeg/kroeg) by [Puck Meerburg](https://puck.moe).  Check out her [project page](https://puckipedia.com/kroeg) for more info about the project!
 
 ## how to run
 
