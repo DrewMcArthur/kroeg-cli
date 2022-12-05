@@ -13,6 +13,5 @@ This is a repository forked from [kroeg](https://puck.moe/git/kroeg/kroeg) by [P
 3. copy `server.toml.example` to `server.toml`
 4. build the project with `cargo build` 
 5. use `cargo run --bin kroeg serve` to run the server
-6. use `cargo run --bin kroeg actor name create` to create a new actor named `name`
-7. run `cargo doc --no-deps` to build semi-helpful docs
-8. query the running server at the address configured in `server.toml`!
+6. use `cargo run --bin kroeg` to display other commands
+7. query the running server at the address configured in `server.toml`!
