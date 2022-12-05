@@ -35,7 +35,9 @@ impl RequestHandler for ContextHandler {
 }
 
 fn listen(address: &str, config: &config::KroegConfig) {
-    let addr = address.parse().expect("Invalid listen address!");
+    let addr = address
+        .parse()
+        .expect(format!("Invalid listen address! {address}").as_str());
 
     let mut routes = vec![
         Route::get_prefix("/", get::GetHandler),
@@ -304,7 +306,9 @@ fn main() {
         ("actor", Some(subcommand)) => async_std::task::block_on(user::handle(config, subcommand)),
         ("serve", Some(subcommand)) => {
             let queue: usize = subcommand.value_of("queue").unwrap_or("0").parse().unwrap();
-            let address = subcommand.value_of("ADDRESS").unwrap_or("");
+            let address = subcommand
+                .value_of("ADDRESS")
+                .unwrap_or(config.server.domain.as_str());
 
             let extra_count = if !address.is_empty() || queue == 0 {
                 queue
@@ -316,12 +320,11 @@ fn main() {
                 async_std::task::spawn(launch_delivery(pool, config.server.clone()));
             }
 
-            if !address.is_empty() {
-                listen(address, &config);
-            } else if queue > 0 {
-                let pool = DatabasePool(config.database);
-                async_std::task::block_on(launch_delivery(pool, config.server));
+            if queue > 0 {
+                let pool = DatabasePool(config.database.clone());
+                async_std::task::block_on(launch_delivery(pool, config.server.clone()));
             }
+            listen(address, &config);
         }
         _ => unreachable!(),
     }

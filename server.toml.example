@@ -10,7 +10,7 @@ database = "postgres"
 [server]
 # The domain this server is running on, without trailing slash, lest you want to invoke horrible debugging
 #  on yourself.
-domain = "http://127.0.0.1:3000"
+domain = "127.0.0.1:3000"
 
 # The name that this server should show up as.
 name = "Test instance"
